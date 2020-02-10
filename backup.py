@@ -2,8 +2,6 @@ import client
 import PySimpleGUI as sg
 import pandas as pd
 import webbrowser
-import mainframe
-
 
 zone_info = {}
 raid_info = {}
@@ -12,7 +10,6 @@ boss_list = []
 
 
 class Engine:
-    boss_name = ''
     def __init__(self):
         self.key = '866b2f014c35f4ce418d12ecbb713388'#create zone names
         self.connection = client.WarcraftLogsClient(api_key=self.key)
@@ -58,39 +55,31 @@ class Engine:
 
         layout = [[sg.Text('Choose a boss')],
                   [sg.Col(column)],
-                  [sg.Button('Search online'), sg.Button('Search offline'), sg.Exit()]]
+                  [sg.Button('Select'), sg.Exit()]]
 
         window = sg.Window('All bosses', layout)
-        search = True
 
         while True:
             event, values = window.Read()
             if event is None or event == 'Exit':
                 break
-            elif event == 'Search online':
+            elif event == 'Select':
                 for key in values:
                     if values[key]:
                         saved_key = key
-                search = True
-            elif event == 'Search offline':
-                for key in values:
-                    if values[key]:
-                        saved_key = key
-                search = False
             break
         window.Close()
         print(boss_list[saved_key])
-        self.boss_name = boss_list[saved_key]
-        return search
+        return boss_list[saved_key]
 
         #need new function
-    def get_setups(self, guild_list):
+    def get_setups(self, raid_name, boss_name):
         # id_Nyalotha = zone_info[raid_name]                  #for ex. Ny\'alotha
         # raid = self.Zones[id_Nyalotha-3]['encounters']
         # for encounter in raid:
         #     raid_info[encounter['name']] = encounter['id']
 
-        rankings = self.connection.rankings_encounter(raid_info[self.boss_name])         #'Wrathion'
+        rankings = self.connection.rankings_encounter(raid_info[boss_name])         #'Wrathion'
         length = len(rankings)
         print(length)
         reportID = []
@@ -99,8 +88,6 @@ class Engine:
         list_of_lists = []
         column = []
         saved_key = []
-        path = []
-
 
         layout = [[sg.Text('Ищем сетапы')],
                   [sg.ProgressBar(length, orientation='h', size=(20, 20), key='progressbar')],
@@ -121,23 +108,32 @@ class Engine:
             # Comberdale_serverRegion = rankings[0]['regionName']
             reportID.append(j['reportID'])
             fightID.append(j['fightID'])
-            #region_name = j['regionName']
+            region_name = j['regionName']
             report_fights = self.connection.report_fights(reportID[counter])
-            #report_events = self.connection.report_events(reportID=reportID[counter])
-            list_classes = []
+            report_events = self.connection.report_events(reportID=reportID[counter])
+            list_classes = {}
 
             for player in report_fights['friendlies']:
                 for player_id in player['fights']:
                     if fightID[counter] == player_id['id']:
-                        list_classes.append(player['type'])
-
-            diff = difference(list_classes, guild_list)  #difference of the classes
-            percent = len(diff)/20
-            list_of_lists.append(list_classes)           #for saving
-            if percent <= 0.2:
-                column.append([sg.CB(str(percent)+str('warcraftlogs.com/reports/{}'.format(reportID[counter])))])
-                path.append('warcraftlogs.com/reports/{}'.format(reportID[counter]))
-            list_of_lists.append(path)
+                        player_name = player['name']
+                        server_name = self.clean_string(player['server'])
+                        info_player = self.connection.report_player(player_name=player_name, serverName=server_name, serverRegion=region_name)
+                        for i in info_player:
+                            if len(info_player) == 0:
+                                spec = ''
+                                list_classes[player['type']] = spec
+                                break
+                            elif i['reportID'] == j['reportID']:
+                                spec = i['spec']
+                                list_classes[player['type']] = spec
+                                break
+                            else:
+                                break
+            path = 'warcraftlogs.com/reports/{}'.format(reportID[counter])
+            list_classes['fight url'] = path
+            list_of_lists.append(list_classes)
+            column.append([sg.CB(str(list_classes).strip('[]'))])
             counter = counter + 1
             print(counter)
             progress_bar.UpdateBar(counter)
@@ -160,27 +156,14 @@ class Engine:
                 for key in values:
                     if values[key]:
                         saved_key = key
-                        webbrowser.open(path[saved_key])
+                        webbrowser.open(list_of_lists[saved_key][21])
             break
         window.Close()
         print(list_of_lists[saved_key])
         df = pd.DataFrame(list_of_lists)
-        name = '{}.csv'.format(self.boss_name)
+        name = '{}.csv'.format(boss_name)
         df.to_csv(name, index=False, header=False)
         return list_of_lists[saved_key]
-
-    def get_setups_offline(self, guild_list):
-        file = sg.popup_get_file('Укажите сохраненные сетапы на определенного босса')
-        df = pd.read_csv(file)
-        rows = df[::-1]
-        column = []
-        path = []
-        for i in rows:
-            diff = difference(i, guild_list)  # difference of the classes
-            percent = len(diff) / 20
-            if percent <= 0.2:
-                column.append([sg.CB(str(percent))])
-                path.append(rows[len(rows)])
 
     def clean_string(self, string):
         dict = [' ', ',', '.', '/', '\\', '|', ';', ':', '[', ']', '+', '*', '@', '!', '#', '$', '%', '&', '(', ')', '}',
@@ -195,12 +178,6 @@ class Engine:
             new_string = new_string + '' + word
         return new_string
 
-
-def difference(minuend, subtrahend):
-    for i in subtrahend:
-        if i in minuend:
-            subtrahend.remove(i)
-    return subtrahend
 # fight_recap = connection.report_guild_fights(Comberdale_guildName, Comberdale_serverName, Comberdale_serverRegion)
 # print(fight_recap)
 
